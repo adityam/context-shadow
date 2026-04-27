@@ -23,7 +23,6 @@ local v_middle <const> = variables.middle
 local v_round  <const> = variables.round
 local v_color  <const> = variables.color
 local v_yes    <const> = variables.yes
-local v_no     <const> = variables.no
 local v_off    <const> = variables.off
 
 local report = logs.reporter("shadow")
@@ -79,8 +78,7 @@ local function rectangle(w, h, rpx, corner)
     return format("rectangle 1,1 %d,%d", x, y)
 end
 
--- Shape-specific: produces canvas size + the two -draw arguments for a
--- rectangular box (optionally with rounded corners).
+-- Build the two ImageMagick masks for the framed (width/height) box shadow.
 local function box_masks(spec)
     local w, h   = spec.width, spec.height
     local ud, pd = spec.udistance, spec.pdistance
@@ -101,8 +99,7 @@ local function box_masks(spec)
     }
 end
 
--- takes prepared masks (canvas size + draw strings) and the
--- shadow parameters in `spec`, builds and runs the magick pipeline.
+-- Render the penumbra and umbra masks into one cached PNG.
 local function render_shadow_png(spec, masks, outfile)
     local shadowcolor = spec.shadowcolor
     local blankcolor  = spec.blankcolor
@@ -147,9 +144,6 @@ local function build_stamp(spec)
     }, "|")
 end
 
--- Generic file-cache wrapper around render_shadow_png. `extra_stamp` lets
--- callers (e.g. the path-shadow case) include shape-specific data in the
--- cache key so identical specs with different geometries don't collide.
 local function render_to_file(spec, masks, extra_stamp)
     local directory = collapsepath(spec.directory or "") or "."
     if not isdir(directory) then mkdirs(directory) end
@@ -172,7 +166,7 @@ end
 
 local function options_to_spec(options)
     local resolution = tonumber(options.resolution) or 150
-    
+
     -- umbra and penumbra are percentages between 0 and 100
     local umbra    = max(0, min(100, tonumber(options.umbra) or 50))
     local penumbra = max(0, min(100, tonumber(options.penumbra) or 40))
@@ -211,28 +205,29 @@ function externalshadow.use(name, options)
     local spec = options_to_spec(options)
     local hoff, voff = placement_sp(options.direction, options.offset)
 
-    local layerspec = {format("layer:%s", name)}
+    local layerspec = { format("layer:%s", name) }
 
     local locationspec = {
-             x=format("%dsp",hoff), 
-             y=format("%dsp",voff)
-          }
+        x = format("%dsp", hoff),
+        y = format("%dsp", voff),
+    }
+
     local formatspec = {
-             width    = options.width,
-             height   = options.height,
-             corner   = v_middle,
-             location = v_middle,
-          }
+        width    = options.width,
+        height   = options.height,
+        corner   = v_middle,
+        location = v_middle,
+    }
 
     local backgroundspec = {
-             width            = options.width,
-             height           = options.height,
-             frame            = v_off,
-             background       = v_color,
-             backgroundcorner = options.backgroundcorner,
-             backgroundradius = options.backgroundradius,
-             backgroundcolor  = options.backgroundcolor,
-          }
+        width            = options.width,
+        height           = options.height,
+        frame            = v_off,
+        background       = v_color,
+        backgroundcorner = options.backgroundcorner,
+        backgroundradius = options.backgroundradius,
+        backgroundcolor  = options.backgroundcolor,
+    }
 
     local filename = externalshadow.render(spec)
     if filename then
@@ -243,24 +238,39 @@ function externalshadow.use(name, options)
     end
 end
 
-local getparameterset = metapost.getparameterset
+local getparameterset    = metapost.getparameterset
+local getparameterpreset = metapost.getparameterpreset
 
--- Convert a knot list (the format returned by mplib's path scanner and
--- stored in the parameter set) into an SVG-style `M ... C ... Z` string
--- suitable for ImageMagick's `-draw "path '...'"`. Each knot is the
--- 6-tuple { x, y, left_x, left_y, right_x, right_y }; the table has a
--- `cycle` flag for closed paths.
---
--- The transform functions `fx` and `fy` are applied to every coordinate
--- so the caller can map MetaPost bp into IM pixel space (with the y-axis
--- flipped).
-local function path_to_svg(knots, fx, fy)
-    local n = knots and #knots or 0
+-- Keys whose value comes from the preset when the user did not pass an
+-- explicit value in `drawshadow [...]`.  They are looked up in the named
+-- preset (e.g. "externalshadow:soft:medium"), which itself inherits from
+-- "externalshadow", so unspecified preset keys still fall through.
+local preset_keys = { "umbra", "penumbra", "usigma", "psigma" }
+
+local function resolve_preset(options)
+    local name = options.preset
+    if not name or name == "" then return end
+    local preset = getparameterpreset("externalshadow:" .. name)
+    if not preset then
+        report("unknown preset %q", name)
+        return
+    end
+    for i = 1, #preset_keys do
+        local k = preset_keys[i]
+        if rawget(options, k) == nil then
+            options[k] = preset[k]
+        end
+    end
+end
+
+-- Turn a scanned MetaPost path into an SVG-style path string for ImageMagick.
+local function path_to_svg(path, fx, fy)
+    local n = path and #path or 0
     if n == 0 then return nil end
 
     local function num(v) return format("%.3f", v) end
 
-    local out = { format("M %s,%s", num(fx(knots[1][1])), num(fy(knots[1][2]))) }
+    local out = { format("M %s,%s", num(fx(path[1][1])), num(fy(path[1][2]))) }
 
     local function append_curve(prev, curr)
         out[#out+1] = format("C %s,%s %s,%s %s,%s",
@@ -270,28 +280,18 @@ local function path_to_svg(knots, fx, fy)
     end
 
     for i = 2, n do
-        append_curve(knots[i-1], knots[i])
+        append_curve(path[i-1], path[i])
     end
-    if knots.cycle and n >= 2 then
-        append_curve(knots[n], knots[1])
+    if path.cycle and n >= 2 then
+        append_curve(path[n], path[1])
         out[#out+1] = "Z"
     end
     return table.concat(out, " ")
 end
 
--- Shape-specific masks for an arbitrary MetaPost path. `xmin/ymin/xmax/ymax`
--- is the path's tight bounding box in bp (passed in from MetaPost via
--- `boundingbox`/`llcorner`/`urcorner`). We size the canvas to fit the
--- path plus `max(ud,pd)+1` pixels of padding on every side so the
--- offset-shadow blur has somewhere to spread.
---
--- The umbra and penumbra masks are the path *outset* by `ud` and `pd`
--- pixels respectively (mirroring how `box_masks` outsets the rectangle).
--- We achieve the outset by stroking the path with the matching width on
--- top of the fill: `stroke-width 2*ud` grows the silhouette by `ud`
--- pixels in every direction. Without this, the shadow would be the same
--- size as the path itself and the blur halo would be invisible.
-local function path_masks(spec, knots, xmin, ymin, xmax, ymax)
+-- Build masks for an arbitrary MetaPost path. The stroke grows each mask by
+-- the requested spread so the blur has room to form around the silhouette.
+local function path_masks(spec, path, xmin, ymin, xmax, ymax)
     local res = spec.resolution
     local pad = max(spec.udistance, spec.pdistance) + 1
     local s   = res / 72
@@ -305,7 +305,7 @@ local function path_masks(spec, knots, xmin, ymin, xmax, ymax)
     local function fx(x) return (x - xmin) * s + pad end
     local function fy(y) return (ymax - y) * s + pad end -- y-flip for IM
 
-    local svg = path_to_svg(knots, fx, fy)
+    local svg = path_to_svg(path, fx, fy)
     if not svg then return nil end
 
     local function outset_draw(distance)
@@ -326,58 +326,18 @@ local function path_masks(spec, knots, xmin, ymin, xmax, ymax)
     }
 end
 
-function mp.shadow_testshadow()
-    local options = getparameterset("externalshadow")
-    local spec    = options_to_spec(options)
-    local filename = externalshadow.render(spec)
-    if not filename then
-        return [[image(nullpicture)]]
-    end
-    local sp_per_bp  = tex.sp("1bp")
-    local hoff, voff = placement_sp(options.direction, options.offset)
-    local w_bp = tex.sp(options.width  or "0pt") / sp_per_bp
-    local h_bp = tex.sp(options.height or "0pt") / sp_per_bp
-    -- Build a centered shadow picture inside an `image(...)` and stamp its
-    -- bounding box with `setbounds` so that downstream layout sees only the
-    -- logical box. The drop offset is applied to the resulting image, not
-    -- baked into the figure placement.
-    --
-    -- For the boxshadow case the bbox is a centered rectangle (`fullsquare`)
-    -- of the requested width/height; for an arbitrary MetaPost path it would
-    -- be the path itself, on the assumption that the PNG generator centers
-    -- the path's bbox in the canvas (currently true for the box).
-    return format(
-        [[image (
-            save p; picture p; p := figure("%s");
-            draw p shifted -center p;
-            setbounds currentpicture to fullsquare xscaled %fbp yscaled %fbp;
-        ) shifted (%fbp, %fbp)]],
-        filename, w_bp, h_bp, hoff/sp_per_bp, -voff/sp_per_bp
-    )
-end
-
--- Render a shadow for an arbitrary MetaPost path. Called from
--- `do_drawshadow` with the path's tight bbox (in bp) computed by
--- MetaPost. The path itself is read from the parameter set as the
--- knot table that mplib's path scanner produced.
---
--- Returns a MetaPost expression that places the rendered PNG so that the
--- centre of the path inside the figure aligns with the centre of the
--- original path, then shifts everything by the requested drop offset.
--- The image's bounding box is set to the original path's bbox so layout
--- ignores the figure's shadow padding.
 function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
     local options = getparameterset("externalshadow")
+    resolve_preset(options)
     local spec    = options_to_spec(options)
-    local knots   = options.path
+    local path    = options.path
 
-    local masks = path_masks(spec, knots, xmin, ymin, xmax, ymax)
+    local masks = path_masks(spec, path, xmin, ymin, xmax, ymax)
     if not masks then
         return [[image(nullpicture)]]
     end
 
-    -- Include the resolved path geometry in the cache key so different
-    -- paths with the same shadow parameters don't share an output file.
+    -- Include geometry so distinct paths never share a cached shadow
     local outfile = render_to_file(spec, masks, "path|" .. masks.umbra_draw)
     if not outfile then
         return [[image(nullpicture)]]
@@ -386,14 +346,8 @@ function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
     local sp_per_bp  = tex.sp("1bp")
     local hoff, voff = placement_sp(options.direction, options.offset)
 
-    -- We can't easily know the rendered PNG size in bp here: ImageMagick's
-    -- `-shadow` expands the canvas to fit the blur halo, so the
-    -- `masks.width/height` we passed to magick understates the actual
-    -- output. Instead we let MP itself centre the loaded figure via
-    -- `shifted -center fp` (matching testshadow), then translate to the
-    -- path's bbox centre. `setbounds` declares the logical bbox as the
-    -- original path's bbox so downstream layout ignores the shadow
-    -- padding, and the outer `shifted` applies the drop offset.
+    -- ImageMagick expands the PNG for the blur, so center the loaded figure
+    -- in MetaPost and then restore the path's logical bounds.
     local cx   = (xmin + xmax) / 2
     local cy   = (ymin + ymax) / 2
     local w_bp = xmax - xmin

@@ -29,10 +29,9 @@
 
 \startMPdefinitions
     presetparameters "externalshadow" [
-        % Note: no default for `path` -- the path scanner stores `origin`
-        % as a pair, which would then break `getparameterpath`. Callers of
-        % `drawshadow` must supply a `path = ...` argument; the macro
-        % checks `hasparameter "path"` and bails out otherwise.
+        % `drawshadow` must receive an explicit path; the usual default
+        % value cannot be converted back with `getparameterpath`.
+        preset           = "",
         width            = "0pt",
         height           = "0pt",
         umbra            = 50,
@@ -51,24 +50,45 @@
         directory        = "",
     ] ;
 
-    def testshadow =
-        applyparameters "externalshadow" "do_testshadow"
-    enddef ;
+    % Named shadow presets, mirroring `\defineexternalshadow[soft:medium]`.
+    % Each preset is a sub-namespace inheriting from "externalshadow", so
+    % only the keys that differ from the parent need to be listed.
+    %
+    % Users can add their own:
+    %
+    %     presetparameters "externalshadow:my:fancy" "externalshadow"
+    %         [umbra = 80, penumbra = 60, usigma = "1.5mm", psigma = "2.0mm"] ;
+    %
+    % and select with `drawshadow [preset = "my:fancy", path = q]`.  An
+    % existing preset can be tweaked with `setparameters`:
+    %
+    %     setparameters "externalshadow:soft:medium" [umbra = 60] ;
+    presetparameters "externalshadow:soft:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0.68mm", psigma = "1.35mm"] ;
+    presetparameters "externalshadow:soft:medium" "externalshadow"
+        [umbra = 50, penumbra = 40, usigma = "0.85mm", psigma = "1.52mm"] ;
+    presetparameters "externalshadow:soft:dark"   "externalshadow"
+        [umbra = 65, penumbra = 50, usigma = "1.02mm", psigma = "1.86mm"] ;
 
-    vardef do_testshadow =
-        lua.mp.shadow_testshadow()
-    enddef ;
+    presetparameters "externalshadow:hard:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0.17mm", psigma = "1.35mm"] ;
+    presetparameters "externalshadow:hard:medium" "externalshadow"
+        [umbra = 50, penumbra = 40, usigma = "0.34mm", psigma = "1.69mm"] ;
+    presetparameters "externalshadow:hard:dark"   "externalshadow"
+        [umbra = 65, penumbra = 50, usigma = "0.51mm", psigma = "1.86mm"] ;
+
+    presetparameters "externalshadow:flat:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0mm",    psigma = "1.19mm"] ;
+    presetparameters "externalshadow:flat:medium" "externalshadow"
+        [umbra = 50, penumbra = 35, usigma = "0mm",    psigma = "1.35mm"] ;
+    presetparameters "externalshadow:flat:dark"   "externalshadow"
+        [umbra = 65, penumbra = 40, usigma = "0mm",    psigma = "1.52mm"] ;
 
     def drawshadow =
         applyparameters "externalshadow" "do_drawshadow"
     enddef ;
 
-    % `applyparameters` stores the scanned parameters in the named
-    % namespace but does not push it onto the lookup stack, so we have to
-    % `pushparameters` here before using `hasparameter`/`getparameterpath`.
-    % We use `getparameterpath` (not `getparameter`) so that mplib injects
-    % the stored knot table back as a path value rather than the fallback
-    % numeric.
+    % Read the scanned path from the parameter set as a MetaPost path value.
     vardef do_drawshadow =
         image (
             pushparameters "externalshadow" ;
@@ -98,7 +118,7 @@
     \expanded{\defineoverlay[\currentexternalshadow][\useexternalshadow{\currentexternalshadow}]}
 \to \everydefineexternalshadow
 
-% Rather than using black as shadow color, we use a variation of azure hsv(210,100,50) obtained by lowering the brightness to hsv(210,100,20). This is because natural light has a higher blue proportion. 
+% Default to a cool dark blue, which gives a softer shadow than pure black.
 \definecolor[shadowcolor][h=001933]
 
 \setupexternalshadow
