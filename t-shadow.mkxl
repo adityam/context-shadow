@@ -1,0 +1,106 @@
+%D \module
+%D   [     file=t-shadow,
+%D      version=2026.04.23,
+%D        title=\CONTEXT\ User Module,
+%D     subtitle=Shadow,
+%D       author=Aditya Mahajan,
+%D         date=\currentdate,
+%D    copyright=Aditya Mahajan,
+%D        email=adityam <at> ieee <dot> org,
+%D      license=GNU General Public License]
+
+\writestatus{loading}{Shadow (ver: 2026.04.23)}
+
+\startmodule[shadow]
+
+\unprotect
+
+\startinterface all
+  \setinterfaceconstant{umbra}{umbra}
+  \setinterfaceconstant{penumbra}{penumbra}
+  \setinterfaceconstant{usigma}{usigma}
+  \setinterfaceconstant{psigma}{psigma}
+  \setinterfaceconstant{udistance}{udistance}
+  \setinterfaceconstant{pdistance}{pdistance}
+  \setinterfaceconstant{shadowcolor}{shadowcolor}
+\stopinterface
+
+\registerctxluafile{t-shadow}{}
+
+\definenamespace
+  [externalshadow]
+  [
+   \c!type=module,
+   \c!name=externalshadow,
+   \c!command=\v!yes,
+   setup=\v!list,
+   \s!parent=externalshadow,
+  ]
+
+\appendtoks
+    \expanded{\defineoverlay[\currentexternalshadow][\useexternalshadow{\currentexternalshadow}]}
+\to \everydefineexternalshadow
+
+% Rather than using black as shadow color, we use a variation of azure hsv(210,100,50) obtained by lowering the brightness to hsv(210,100,20). This is because natural light has a higher blue proportion. 
+\definecolor[shadowcolor][h=001933]
+
+\setupexternalshadow
+  [\c!directory=,
+   \c!width=\overlaywidth,
+   \c!height=\overlayheight,
+   \c!umbra=50,
+   \c!penumbra=40,
+   \c!usigma=0.85mm,
+   \c!psigma=1.52mm,
+   \c!udistance=0mm,
+   \c!pdistance=0.51mm,
+   \c!direction=-45,
+   \c!offset=1.69mm,
+   \c!backgroundradius=\framedparameter\c!backgroundradius,
+   \c!resolution=150,
+   \c!shadowcolor=shadowcolor,
+   \c!backgroundcolor=\framedparameter\c!backgroundcolor,
+   \c!backgroundcorner=\framedparameter\c!backgroundcorner,
+   \c!force=\v!no]
+
+
+\define[1]\useexternalshadow%
+  {\bgroup
+   \edef\currentexternalshadow{#1}%
+   \clf_useexternalshadow
+     name             {\currentexternalshadow}%
+     directory        {\externalshadowparameter\c!directory}%
+     width            {\externalshadowparameter\c!width}%
+     height           {\externalshadowparameter\c!height}%
+     umbra            {\externalshadowparameter\c!umbra}%
+     penumbra         {\externalshadowparameter\c!penumbra}%
+     usigma           {\externalshadowparameter\c!usigma}%
+     psigma           {\externalshadowparameter\c!psigma}%
+     udistance        {\externalshadowparameter\c!udistance}%
+     pdistance        {\externalshadowparameter\c!pdistance}%
+     direction        {\externalshadowparameter\c!direction}%
+     offset           {\externalshadowparameter\c!offset}%
+     resolution       {\externalshadowparameter\c!resolution}%
+     shadowcolor      {\externalshadowparameter\c!shadowcolor}%
+     backgroundcorner {\externalshadowparameter\c!backgroundcorner}%
+     backgroundradius {\externalshadowparameter\c!backgroundradius}%
+     backgroundcolor  {\externalshadowparameter\c!backgroundcolor}%
+     force            {\externalshadowparameter\c!force}%
+   \relax
+   \egroup}
+
+\defineexternalshadow[soft:light]  [umbra=35,penumbra=30,usigma=0.68mm,psigma=1.35mm]
+\defineexternalshadow[soft:medium] [umbra=50,penumbra=40,usigma=0.85mm,psigma=1.52mm]
+\defineexternalshadow[soft:dark]   [umbra=65,penumbra=50,usigma=1.02mm,psigma=1.86mm]
+
+\defineexternalshadow[hard:light]  [umbra=35,penumbra=30,usigma=0.17mm,psigma=1.35mm]
+\defineexternalshadow[hard:medium] [umbra=50,penumbra=40,usigma=0.34mm,psigma=1.69mm]
+\defineexternalshadow[hard:dark]   [umbra=65,penumbra=50,usigma=0.51mm,psigma=1.86mm]
+
+\defineexternalshadow[flat:light]  [umbra=35,penumbra=30,usigma=0mm,psigma=1.19mm]
+\defineexternalshadow[flat:medium] [umbra=50,penumbra=35,usigma=0mm,psigma=1.35mm]
+\defineexternalshadow[flat:dark]   [umbra=65,penumbra=40,usigma=0mm,psigma=1.52mm]
+
+\protect
+
+\stopmodule
