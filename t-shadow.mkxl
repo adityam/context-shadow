@@ -50,19 +50,6 @@
         directory        = "",
     ] ;
 
-    % Named shadow presets, mirroring `\defineexternalshadow[soft:medium]`.
-    % Each preset is a sub-namespace inheriting from "externalshadow", so
-    % only the keys that differ from the parent need to be listed.
-    %
-    % Users can add their own:
-    %
-    %     presetparameters "externalshadow:my:fancy" "externalshadow"
-    %         [umbra = 80, penumbra = 60, usigma = "1.5mm", psigma = "2.0mm"] ;
-    %
-    % and select with `drawshadow [preset = "my:fancy", path = q]`.  An
-    % existing preset can be tweaked with `setparameters`:
-    %
-    %     setparameters "externalshadow:soft:medium" [umbra = 60] ;
     presetparameters "externalshadow:soft:light"  "externalshadow"
         [umbra = 35, penumbra = 30, usigma = "0.68mm", psigma = "1.35mm"] ;
     presetparameters "externalshadow:soft:medium" "externalshadow"
