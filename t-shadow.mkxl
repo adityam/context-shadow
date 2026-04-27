@@ -27,6 +27,63 @@
 
 \registerctxluafile{t-shadow}{}
 
+\startMPdefinitions
+    presetparameters "externalshadow" [
+        % Note: no default for `path` -- the path scanner stores `origin`
+        % as a pair, which would then break `getparameterpath`. Callers of
+        % `drawshadow` must supply a `path = ...` argument; the macro
+        % checks `hasparameter "path"` and bails out otherwise.
+        width            = "0pt",
+        height           = "0pt",
+        umbra            = 50,
+        penumbra         = 40,
+        usigma           = "0.85mm",
+        psigma           = "1.52mm",
+        udistance        = "0mm",
+        pdistance        = "0.51mm",
+        direction        = -45,
+        offset           = "1.69mm",
+        resolution       = 150,
+        shadowcolor      = "shadowcolor",
+        backgroundcorner = "",
+        backgroundradius = "0pt",
+        force            = "no",
+        directory        = "",
+    ] ;
+
+    def testshadow =
+        applyparameters "externalshadow" "do_testshadow"
+    enddef ;
+
+    vardef do_testshadow =
+        lua.mp.shadow_testshadow()
+    enddef ;
+
+    def drawshadow =
+        applyparameters "externalshadow" "do_drawshadow"
+    enddef ;
+
+    % `applyparameters` stores the scanned parameters in the named
+    % namespace but does not push it onto the lookup stack, so we have to
+    % `pushparameters` here before using `hasparameter`/`getparameterpath`.
+    % We use `getparameterpath` (not `getparameter`) so that mplib injects
+    % the stored knot table back as a path value rather than the fallback
+    % numeric.
+    vardef do_drawshadow =
+        image (
+            pushparameters "externalshadow" ;
+            if hasparameter "path" :
+                save p ; path p ; p := getparameterpath "path" ;
+                draw lua.mp.shadow_drawshadow(
+                    xpart llcorner p, ypart llcorner p,
+                    xpart urcorner p, ypart urcorner p
+                ) ;
+            fi ;
+            popparameters ;
+        )
+    enddef ;
+\stopMPdefinitions
+
 \definenamespace
   [externalshadow]
   [

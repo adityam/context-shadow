@@ -1,2 +1,4 @@
 .vscode/
 *-temp-*.png
+*.tuc
+*.log

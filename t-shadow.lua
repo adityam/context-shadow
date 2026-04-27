@@ -79,24 +79,37 @@ local function rectangle(w, h, rpx, corner)
     return format("rectangle 1,1 %d,%d", x, y)
 end
 
-local function create_shadow_png(spec, outfile)
+-- Shape-specific: produces canvas size + the two -draw arguments for a
+-- rectangular box (optionally with rounded corners).
+local function box_masks(spec)
     local w, h   = spec.width, spec.height
     local ud, pd = spec.udistance, spec.pdistance
     local rpx    = spec.backgroundradius
+    local corner = spec.backgroundcorner
 
-    local shadowcolor = spec.shadowcolor
-    local blankcolor  = spec.blankcolor
-    local corner      = spec.backgroundcorner
-
-    local cw = w + 2 * max(pd, ud) + 2
-    local ch = h + 2 * max(pd, ud) + 2
+    local width  = w + 2 * max(pd, ud) + 2
+    local height = h + 2 * max(pd, ud) + 2
 
     local r_pen = min(rpx, floor(min(w + 2*pd, h + 2*pd) / 2))
     local r_umb = min(rpx, floor(min(w + 2*ud, h + 2*ud) / 2))
 
+    return {
+        width         = width,
+        height        = height,
+        umbra_draw    = rectangle(w + 2*ud, h + 2*ud, r_umb, corner),
+        penumbra_draw = rectangle(w + 2*pd, h + 2*pd, r_pen, corner),
+    }
+end
+
+-- takes prepared masks (canvas size + draw strings) and the
+-- shadow parameters in `spec`, builds and runs the magick pipeline.
+local function render_shadow_png(spec, masks, outfile)
+    local shadowcolor = spec.shadowcolor
+    local blankcolor  = spec.blankcolor
+
     local mask_fmt = "-size %dx%d -depth 8 xc:none -fill black -stroke none -draw %s"
-    local pmask = format(mask_fmt, cw, ch, shell_quote(rectangle(w + 2*pd, h + 2*pd, r_pen, corner)))
-    local umask = format(mask_fmt, cw, ch, shell_quote(rectangle(w + 2*ud, h + 2*ud, r_umb, corner)))
+    local pmask = format(mask_fmt, masks.width, masks.height, shell_quote(masks.penumbra_draw))
+    local umask = format(mask_fmt, masks.width, masks.height, shell_quote(masks.umbra_draw))
 
     local shadow_fmt = "-background %s -shadow %dx%d+0+0 +repage"
     local pshadow = format(shadow_fmt, shell_quote(shadowcolor), spec.penumbra, spec.psigma)
@@ -134,16 +147,27 @@ local function build_stamp(spec)
     }, "|")
 end
 
-function externalshadow.render(spec)
+-- Generic file-cache wrapper around render_shadow_png. `extra_stamp` lets
+-- callers (e.g. the path-shadow case) include shape-specific data in the
+-- cache key so identical specs with different geometries don't collide.
+local function render_to_file(spec, masks, extra_stamp)
     local directory = collapsepath(spec.directory or "") or "."
     if not isdir(directory) then mkdirs(directory) end
 
-    local hash = job.variables.makechecksum(build_stamp(spec))
+    local stamp = build_stamp(spec)
+    if extra_stamp and extra_stamp ~= "" then
+        stamp = stamp .. "|" .. extra_stamp
+    end
+    local hash    = job.variables.makechecksum(stamp)
     local outfile = file.join(directory, format("%s-temp-%s.png", tex.jobname, hash))
 
     if not spec.force and isfile(outfile) then return outfile end
-    if create_shadow_png(spec, outfile) then return outfile end
+    if render_shadow_png(spec, masks, outfile) then return outfile end
     return nil
+end
+
+function externalshadow.render(spec)
+    return render_to_file(spec, box_masks(spec))
 end
 
 local function options_to_spec(options)
@@ -217,6 +241,175 @@ function externalshadow.use(name, options)
         context.setlayerframed(layerspec, {}, backgroundspec, context.nested(""))
         context.flushlayer(layerspec)
     end
+end
+
+local getparameterset = metapost.getparameterset
+
+-- Convert a knot list (the format returned by mplib's path scanner and
+-- stored in the parameter set) into an SVG-style `M ... C ... Z` string
+-- suitable for ImageMagick's `-draw "path '...'"`. Each knot is the
+-- 6-tuple { x, y, left_x, left_y, right_x, right_y }; the table has a
+-- `cycle` flag for closed paths.
+--
+-- The transform functions `fx` and `fy` are applied to every coordinate
+-- so the caller can map MetaPost bp into IM pixel space (with the y-axis
+-- flipped).
+local function path_to_svg(knots, fx, fy)
+    local n = knots and #knots or 0
+    if n == 0 then return nil end
+
+    local function num(v) return format("%.3f", v) end
+
+    local out = { format("M %s,%s", num(fx(knots[1][1])), num(fy(knots[1][2]))) }
+
+    local function append_curve(prev, curr)
+        out[#out+1] = format("C %s,%s %s,%s %s,%s",
+            num(fx(prev[5])), num(fy(prev[6])),  -- right control of prev
+            num(fx(curr[3])), num(fy(curr[4])),  -- left control of curr
+            num(fx(curr[1])), num(fy(curr[2])))  -- knot point of curr
+    end
+
+    for i = 2, n do
+        append_curve(knots[i-1], knots[i])
+    end
+    if knots.cycle and n >= 2 then
+        append_curve(knots[n], knots[1])
+        out[#out+1] = "Z"
+    end
+    return table.concat(out, " ")
+end
+
+-- Shape-specific masks for an arbitrary MetaPost path. `xmin/ymin/xmax/ymax`
+-- is the path's tight bounding box in bp (passed in from MetaPost via
+-- `boundingbox`/`llcorner`/`urcorner`). We size the canvas to fit the
+-- path plus `max(ud,pd)+1` pixels of padding on every side so the
+-- offset-shadow blur has somewhere to spread.
+--
+-- The umbra and penumbra masks are the path *outset* by `ud` and `pd`
+-- pixels respectively (mirroring how `box_masks` outsets the rectangle).
+-- We achieve the outset by stroking the path with the matching width on
+-- top of the fill: `stroke-width 2*ud` grows the silhouette by `ud`
+-- pixels in every direction. Without this, the shadow would be the same
+-- size as the path itself and the blur halo would be invisible.
+local function path_masks(spec, knots, xmin, ymin, xmax, ymax)
+    local res = spec.resolution
+    local pad = max(spec.udistance, spec.pdistance) + 1
+    local s   = res / 72
+
+    local path_w_px = round((xmax - xmin) * s)
+    local path_h_px = round((ymax - ymin) * s)
+
+    local width  = path_w_px + 2 * pad
+    local height = path_h_px + 2 * pad
+
+    local function fx(x) return (x - xmin) * s + pad end
+    local function fy(y) return (ymax - y) * s + pad end -- y-flip for IM
+
+    local svg = path_to_svg(knots, fx, fy)
+    if not svg then return nil end
+
+    local function outset_draw(distance)
+        if distance > 0 then
+            return format(
+                "fill black stroke black stroke-width %d stroke-linejoin round stroke-linecap round fill-rule nonzero path '%s'",
+                2 * distance, svg)
+        else
+            return format("fill black fill-rule nonzero path '%s'", svg)
+        end
+    end
+
+    return {
+        width         = width,
+        height        = height,
+        umbra_draw    = outset_draw(spec.udistance),
+        penumbra_draw = outset_draw(spec.pdistance),
+    }
+end
+
+function mp.shadow_testshadow()
+    local options = getparameterset("externalshadow")
+    local spec    = options_to_spec(options)
+    local filename = externalshadow.render(spec)
+    if not filename then
+        return [[image(nullpicture)]]
+    end
+    local sp_per_bp  = tex.sp("1bp")
+    local hoff, voff = placement_sp(options.direction, options.offset)
+    local w_bp = tex.sp(options.width  or "0pt") / sp_per_bp
+    local h_bp = tex.sp(options.height or "0pt") / sp_per_bp
+    -- Build a centered shadow picture inside an `image(...)` and stamp its
+    -- bounding box with `setbounds` so that downstream layout sees only the
+    -- logical box. The drop offset is applied to the resulting image, not
+    -- baked into the figure placement.
+    --
+    -- For the boxshadow case the bbox is a centered rectangle (`fullsquare`)
+    -- of the requested width/height; for an arbitrary MetaPost path it would
+    -- be the path itself, on the assumption that the PNG generator centers
+    -- the path's bbox in the canvas (currently true for the box).
+    return format(
+        [[image (
+            save p; picture p; p := figure("%s");
+            draw p shifted -center p;
+            setbounds currentpicture to fullsquare xscaled %fbp yscaled %fbp;
+        ) shifted (%fbp, %fbp)]],
+        filename, w_bp, h_bp, hoff/sp_per_bp, -voff/sp_per_bp
+    )
+end
+
+-- Render a shadow for an arbitrary MetaPost path. Called from
+-- `do_drawshadow` with the path's tight bbox (in bp) computed by
+-- MetaPost. The path itself is read from the parameter set as the
+-- knot table that mplib's path scanner produced.
+--
+-- Returns a MetaPost expression that places the rendered PNG so that the
+-- centre of the path inside the figure aligns with the centre of the
+-- original path, then shifts everything by the requested drop offset.
+-- The image's bounding box is set to the original path's bbox so layout
+-- ignores the figure's shadow padding.
+function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
+    local options = getparameterset("externalshadow")
+    local spec    = options_to_spec(options)
+    local knots   = options.path
+
+    local masks = path_masks(spec, knots, xmin, ymin, xmax, ymax)
+    if not masks then
+        return [[image(nullpicture)]]
+    end
+
+    -- Include the resolved path geometry in the cache key so different
+    -- paths with the same shadow parameters don't share an output file.
+    local outfile = render_to_file(spec, masks, "path|" .. masks.umbra_draw)
+    if not outfile then
+        return [[image(nullpicture)]]
+    end
+
+    local sp_per_bp  = tex.sp("1bp")
+    local hoff, voff = placement_sp(options.direction, options.offset)
+
+    -- We can't easily know the rendered PNG size in bp here: ImageMagick's
+    -- `-shadow` expands the canvas to fit the blur halo, so the
+    -- `masks.width/height` we passed to magick understates the actual
+    -- output. Instead we let MP itself centre the loaded figure via
+    -- `shifted -center fp` (matching testshadow), then translate to the
+    -- path's bbox centre. `setbounds` declares the logical bbox as the
+    -- original path's bbox so downstream layout ignores the shadow
+    -- padding, and the outer `shifted` applies the drop offset.
+    local cx   = (xmin + xmax) / 2
+    local cy   = (ymin + ymax) / 2
+    local w_bp = xmax - xmin
+    local h_bp = ymax - ymin
+
+    return format(
+        [[image (
+            save fp ; picture fp ; fp := figure("%s") ;
+            draw fp shifted (-center fp) shifted (%fbp, %fbp) ;
+            setbounds currentpicture to fullsquare xscaled %fbp yscaled %fbp shifted (%fbp, %fbp) ;
+        ) shifted (%fbp, %fbp)]],
+        outfile,
+        cx, cy,
+        w_bp, h_bp, cx, cy,
+        hoff/sp_per_bp, -voff/sp_per_bp
+    )
 end
 
 interfaces.implement {
