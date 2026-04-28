@@ -27,70 +27,6 @@
 
 \registerctxluafile{t-shadow}{}
 
-\startMPdefinitions
-    presetparameters "externalshadow" [
-        % `drawshadow` must receive an explicit path; the usual default
-        % value cannot be converted back with `getparameterpath`.
-        preset           = "",
-        width            = "0pt",
-        height           = "0pt",
-        umbra            = 50,
-        penumbra         = 40,
-        usigma           = "0.85mm",
-        psigma           = "1.52mm",
-        udistance        = "0mm",
-        pdistance        = "0.51mm",
-        direction        = -45,
-        offset           = "1.69mm",
-        resolution       = 150,
-        shadowcolor      = "shadowcolor",
-        backgroundcorner = "",
-        backgroundradius = "0pt",
-        force            = "no",
-        directory        = "",
-    ] ;
-
-    presetparameters "externalshadow:soft:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0.68mm", psigma = "1.35mm"] ;
-    presetparameters "externalshadow:soft:medium" "externalshadow"
-        [umbra = 50, penumbra = 40, usigma = "0.85mm", psigma = "1.52mm"] ;
-    presetparameters "externalshadow:soft:dark"   "externalshadow"
-        [umbra = 65, penumbra = 50, usigma = "1.02mm", psigma = "1.86mm"] ;
-
-    presetparameters "externalshadow:hard:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0.17mm", psigma = "1.35mm"] ;
-    presetparameters "externalshadow:hard:medium" "externalshadow"
-        [umbra = 50, penumbra = 40, usigma = "0.34mm", psigma = "1.69mm"] ;
-    presetparameters "externalshadow:hard:dark"   "externalshadow"
-        [umbra = 65, penumbra = 50, usigma = "0.51mm", psigma = "1.86mm"] ;
-
-    presetparameters "externalshadow:flat:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0mm",    psigma = "1.19mm"] ;
-    presetparameters "externalshadow:flat:medium" "externalshadow"
-        [umbra = 50, penumbra = 35, usigma = "0mm",    psigma = "1.35mm"] ;
-    presetparameters "externalshadow:flat:dark"   "externalshadow"
-        [umbra = 65, penumbra = 40, usigma = "0mm",    psigma = "1.52mm"] ;
-
-    def drawshadow =
-        applyparameters "externalshadow" "do_drawshadow"
-    enddef ;
-
-    % Read the scanned path from the parameter set as a MetaPost path value.
-    vardef do_drawshadow =
-        image (
-            pushparameters "externalshadow" ;
-            if hasparameter "path" :
-                save p ; path p ; p := getparameterpath "path" ;
-                draw lua.mp.shadow_drawshadow(
-                    xpart llcorner p, ypart llcorner p,
-                    xpart urcorner p, ypart urcorner p
-                ) ;
-            fi ;
-            popparameters ;
-        )
-    enddef ;
-\stopMPdefinitions
-
 \definenamespace
   [externalshadow]
   [
@@ -164,6 +100,70 @@
 \defineexternalshadow[flat:light]  [umbra=35,penumbra=30,usigma=0mm,psigma=1.19mm]
 \defineexternalshadow[flat:medium] [umbra=50,penumbra=35,usigma=0mm,psigma=1.35mm]
 \defineexternalshadow[flat:dark]   [umbra=65,penumbra=40,usigma=0mm,psigma=1.52mm]
+
+\startMPdefinitions
+    presetparameters "externalshadow" [
+        % path = must be passed explicitly.
+        preset           = "",
+        umbra            = "\externalshadowparameter\c!umbra",
+        penumbra         = "\externalshadowparameter\c!penumbra",
+        usigma           = "\externalshadowparameter\c!usigma",
+        psigma           = "\externalshadowparameter\c!psigma",
+        udistance        = "\externalshadowparameter\c!udistance",
+        pdistance        = "\externalshadowparameter\c!pdistance",
+        direction        = "\externalshadowparameter\c!direction",
+        offset           = "\externalshadowparameter\c!offset",
+        resolution       = "\externalshadowparameter\c!resolution",
+        shadowcolor      = "\externalshadowparameter\c!shadowcolor",
+        backgroundcolor  = "\externalshadowparameter\c!backgroundcolor",
+        force            = "\externalshadowparameter\c!force",
+        directory        = "\externalshadowparameter\c!directory",
+    ] ;
+
+    presetparameters "externalshadow:soft:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0.51mm", psigma = "1.02mm"] ;
+    presetparameters "externalshadow:soft:medium" "externalshadow"
+        [umbra = 50, penumbra = 40, usigma = "0.68mm", psigma = "1.19mm"] ;
+    presetparameters "externalshadow:soft:dark"   "externalshadow"
+        [umbra = 65, penumbra = 50, usigma = "0.85mm", psigma = "1.52mm"] ;
+
+    presetparameters "externalshadow:hard:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0.11mm", psigma = "1.02mm"] ;
+    presetparameters "externalshadow:hard:medium" "externalshadow"
+        [umbra = 50, penumbra = 40, usigma = "0.17mm", psigma = "1.35mm"] ;
+    presetparameters "externalshadow:hard:dark"   "externalshadow"
+        [umbra = 65, penumbra = 50, usigma = "0.34mm", psigma = "1.52mm"] ;
+
+    presetparameters "externalshadow:flat:light"  "externalshadow"
+        [umbra = 35, penumbra = 30, usigma = "0mm",    psigma = "0.85mm"] ;
+    presetparameters "externalshadow:flat:medium" "externalshadow"
+        [umbra = 50, penumbra = 35, usigma = "0mm",    psigma = "1.02mm"] ;
+    presetparameters "externalshadow:flat:dark"   "externalshadow"
+        [umbra = 65, penumbra = 40, usigma = "0mm",    psigma = "1.19mm"] ;
+
+    def externalshadow =
+        applyparameters "externalshadow" "do_externalshadow"
+    enddef ;
+
+    vardef do_externalshadow =
+        image (
+            pushparameters "externalshadow" ;
+            if hasparameter "path" :
+                newpath p ; p := getparameterpath "path" ;
+                newstring bgcolor ;  bgcolor := getparameter "backgroundcolor" ;
+                draw lua.mp.externalshadow_use(
+                    xpart llcorner p, ypart llcorner p,
+                    xpart urcorner p, ypart urcorner p
+                ) ;
+                if bgcolor <> "" :
+                    fill p withcolor bgcolor ;
+                fi ;
+            fi ;
+            popparameters ;
+        )
+    enddef ;
+\stopMPdefinitions
+
 
 \protect
 

@@ -33,6 +33,8 @@ end
 
 local function dimen_to_px(n, resolution)
     if n == nil or n == "" then return 0 end
+    -- Metapost dimensions are passed as numbers.
+    if type(n) == "number" then n = format("%fbp", n) end
     local pxdimen = tex.sp("1in") / resolution
     return round(tex.sp(todimen(n)) / pxdimen)
 end
@@ -78,15 +80,16 @@ local function rectangle(w, h, rpx, corner)
     return format("rectangle 1,1 %d,%d", x, y)
 end
 
--- Build the two ImageMagick masks for the framed (width/height) box shadow.
+-- Build the two ImageMagick masks for the box shadow.
 local function box_masks(spec)
     local w, h   = spec.width, spec.height
     local ud, pd = spec.udistance, spec.pdistance
     local rpx    = spec.backgroundradius
     local corner = spec.backgroundcorner
 
-    local width  = w + 2 * max(pd, ud) + 2
-    local height = h + 2 * max(pd, ud) + 2
+    local pad = max(ud + 2 * spec.usigma, pd + 2 * spec.psigma) + 1
+    local width  = w + 2 * pad
+    local height = h + 2 * pad
 
     local r_pen = min(rpx, floor(min(w + 2*pd, h + 2*pd) / 2))
     local r_umb = min(rpx, floor(min(w + 2*ud, h + 2*ud) / 2))
@@ -133,8 +136,8 @@ local function render_shadow_png(spec, masks, outfile)
     return true
 end
 
-local function build_stamp(spec)
-    return table.concat({
+local function build_stamp(spec, masks)
+    local stamp = table.concat({
         spec.width, spec.height, spec.backgroundradius,
         spec.udistance, spec.pdistance, spec.usigma, spec.psigma,
         spec.umbra, spec.penumbra, spec.resolution,
@@ -142,16 +145,18 @@ local function build_stamp(spec)
         spec.direction, spec.offset,
         spec.backgroundcorner,
     }, "|")
+    
+    if masks and masks.umbra_draw and masks.penumbra_draw then
+        stamp = stamp .. "|" .. masks.umbra_draw .. "|" .. masks.penumbra_draw
+    end
+    return stamp
 end
 
-local function render_to_file(spec, masks, extra_stamp)
+local function render_to_file(spec, masks)
     local directory = collapsepath(spec.directory or "") or "."
     if not isdir(directory) then mkdirs(directory) end
 
-    local stamp = build_stamp(spec)
-    if extra_stamp and extra_stamp ~= "" then
-        stamp = stamp .. "|" .. extra_stamp
-    end
+    local stamp = build_stamp(spec, masks)
     local hash    = job.variables.makechecksum(stamp)
     local outfile = file.join(directory, format("%s-temp-%s.png", tex.jobname, hash))
 
@@ -242,7 +247,7 @@ local getparameterset    = metapost.getparameterset
 local getparameterpreset = metapost.getparameterpreset
 
 -- Keys whose value comes from the preset when the user did not pass an
--- explicit value in `drawshadow [...]`.  They are looked up in the named
+-- explicit value in `externalshadow [...]`. They are looked up in the named
 -- preset (e.g. "externalshadow:soft:medium"), which itself inherits from
 -- "externalshadow", so unspecified preset keys still fall through.
 local preset_keys = { "umbra", "penumbra", "usigma", "psigma" }
@@ -289,11 +294,9 @@ local function path_to_svg(path, fx, fy)
     return table.concat(out, " ")
 end
 
--- Build masks for an arbitrary MetaPost path. The stroke grows each mask by
--- the requested spread so the blur has room to form around the silhouette.
 local function path_masks(spec, path, xmin, ymin, xmax, ymax)
     local res = spec.resolution
-    local pad = max(spec.udistance, spec.pdistance) + 1
+    local pad = max(spec.udistance + 2 * spec.usigma, spec.pdistance + 2 * spec.psigma) + 1
     local s   = res / 72
 
     local path_w_px = round((xmax - xmin) * s)
@@ -326,9 +329,17 @@ local function path_masks(spec, path, xmin, ymin, xmax, ymax)
     }
 end
 
-function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
+function mp.externalshadow_use(xmin, ymin, xmax, ymax)
     local options = getparameterset("externalshadow")
     resolve_preset(options)
+    local keys = {
+        "umbra", "penumbra", "usigma", "psigma", "udistance", "pdistance",
+        "direction", "offset", "resolution", "shadowcolor", "backgroundcolor",
+        "force", "directory", "preset",
+    }
+    for _, k in ipairs(keys) do
+        report("options.%s = %s", k, tostring(options[k]))
+    end
     local spec    = options_to_spec(options)
     local path    = options.path
 
@@ -337,8 +348,7 @@ function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
         return [[image(nullpicture)]]
     end
 
-    -- Include geometry so distinct paths never share a cached shadow
-    local outfile = render_to_file(spec, masks, "path|" .. masks.umbra_draw)
+    local outfile = render_to_file(spec, masks)
     if not outfile then
         return [[image(nullpicture)]]
     end
@@ -355,7 +365,7 @@ function mp.shadow_drawshadow(xmin, ymin, xmax, ymax)
 
     return format(
         [[image (
-            save fp ; picture fp ; fp := figure("%s") ;
+            newpicture fp ; fp := figure("%s") ;
             draw fp shifted (-center fp) shifted (%fbp, %fbp) ;
             setbounds currentpicture to fullsquare xscaled %fbp yscaled %fbp shifted (%fbp, %fbp) ;
         ) shifted (%fbp, %fbp)]],
