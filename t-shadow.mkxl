@@ -23,6 +23,7 @@
   \setinterfaceconstant{udistance}{udistance}
   \setinterfaceconstant{pdistance}{pdistance}
   \setinterfaceconstant{shadowcolor}{shadowcolor}
+  \setinterfaceconstant{fillcolor}{fillcolor}
 \stopinterface
 
 \registerctxluafile{t-shadow}{}
@@ -48,7 +49,7 @@
   [\c!directory=,
    \c!width=\overlaywidth,
    \c!height=\overlayheight,
-   \c!umbra=50,
+   \c!umbra=80,
    \c!penumbra=40,
    \c!usigma=0.85mm,
    \c!psigma=1.52mm,
@@ -59,6 +60,7 @@
    \c!backgroundradius=\framedparameter\c!backgroundradius,
    \c!resolution=150,
    \c!shadowcolor=shadowcolor,
+   \c!fillcolor=,
    \c!backgroundcolor=\framedparameter\c!backgroundcolor,
    \c!backgroundcorner=\framedparameter\c!backgroundcorner,
    \c!force=\v!no]
@@ -82,6 +84,7 @@
      offset           {\externalshadowparameter\c!offset}%
      resolution       {\externalshadowparameter\c!resolution}%
      shadowcolor      {\externalshadowparameter\c!shadowcolor}%
+     fillcolor        {\externalshadowparameter\c!fillcolor}%
      backgroundcorner {\externalshadowparameter\c!backgroundcorner}%
      backgroundradius {\externalshadowparameter\c!backgroundradius}%
      backgroundcolor  {\externalshadowparameter\c!backgroundcolor}%
@@ -102,45 +105,6 @@
 \defineexternalshadow[flat:dark]   [umbra=65,penumbra=40,usigma=0mm,psigma=1.52mm]
 
 \startMPdefinitions
-    presetparameters "externalshadow" [
-        % path = must be passed explicitly.
-        preset           = "",
-        umbra            = "\externalshadowparameter\c!umbra",
-        penumbra         = "\externalshadowparameter\c!penumbra",
-        usigma           = "\externalshadowparameter\c!usigma",
-        psigma           = "\externalshadowparameter\c!psigma",
-        udistance        = "\externalshadowparameter\c!udistance",
-        pdistance        = "\externalshadowparameter\c!pdistance",
-        direction        = "\externalshadowparameter\c!direction",
-        offset           = "\externalshadowparameter\c!offset",
-        resolution       = "\externalshadowparameter\c!resolution",
-        shadowcolor      = "\externalshadowparameter\c!shadowcolor",
-        backgroundcolor  = "\externalshadowparameter\c!backgroundcolor",
-        force            = "\externalshadowparameter\c!force",
-        directory        = "\externalshadowparameter\c!directory",
-    ] ;
-
-    presetparameters "externalshadow:soft:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0.51mm", psigma = "1.02mm"] ;
-    presetparameters "externalshadow:soft:medium" "externalshadow"
-        [umbra = 50, penumbra = 40, usigma = "0.68mm", psigma = "1.19mm"] ;
-    presetparameters "externalshadow:soft:dark"   "externalshadow"
-        [umbra = 65, penumbra = 50, usigma = "0.85mm", psigma = "1.52mm"] ;
-
-    presetparameters "externalshadow:hard:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0.11mm", psigma = "1.02mm"] ;
-    presetparameters "externalshadow:hard:medium" "externalshadow"
-        [umbra = 50, penumbra = 40, usigma = "0.17mm", psigma = "1.35mm"] ;
-    presetparameters "externalshadow:hard:dark"   "externalshadow"
-        [umbra = 65, penumbra = 50, usigma = "0.34mm", psigma = "1.52mm"] ;
-
-    presetparameters "externalshadow:flat:light"  "externalshadow"
-        [umbra = 35, penumbra = 30, usigma = "0mm",    psigma = "0.85mm"] ;
-    presetparameters "externalshadow:flat:medium" "externalshadow"
-        [umbra = 50, penumbra = 35, usigma = "0mm",    psigma = "1.02mm"] ;
-    presetparameters "externalshadow:flat:dark"   "externalshadow"
-        [umbra = 65, penumbra = 40, usigma = "0mm",    psigma = "1.19mm"] ;
-
     def externalshadow =
         applyparameters "externalshadow" "do_externalshadow"
     enddef ;
@@ -150,13 +114,13 @@
             pushparameters "externalshadow" ;
             if hasparameter "path" :
                 newpath p ; p := getparameterpath "path" ;
-                newstring bgcolor ;  bgcolor := getparameter "backgroundcolor" ;
+                newstring fillcolor ; fillcolor := lua.mp.externalshadow_fillcolor() ;
                 draw lua.mp.externalshadow_use(
                     xpart llcorner p, ypart llcorner p,
                     xpart urcorner p, ypart urcorner p
                 ) ;
-                if bgcolor <> "" :
-                    fill p withcolor bgcolor ;
+                if fillcolor <> "" :
+                    fill p withcolor fillcolor ;
                 fi ;
             fi ;
             popparameters ;

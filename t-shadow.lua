@@ -17,7 +17,9 @@ local cosd, sind             = math.cosd, math.sind
 local isfile, isdir, mkdirs  = lfs.isfile, lfs.isdir, lfs.mkdirs
 local collapsepath           = file.collapsepath
 
-local variables = interfaces.variables
+local getmacro        = tokens.getters.macro
+local variables       = interfaces.variables
+local getparameterset = metapost.getparameterset
 
 local v_middle <const> = variables.middle
 local v_round  <const> = variables.round
@@ -33,8 +35,10 @@ end
 
 local function dimen_to_px(n, resolution)
     if n == nil or n == "" then return 0 end
+  --
     -- Metapost dimensions are passed as numbers.
     if type(n) == "number" then n = format("%fbp", n) end
+
     local pxdimen = tex.sp("1in") / resolution
     return round(tex.sp(todimen(n)) / pxdimen)
 end
@@ -250,27 +254,27 @@ function externalshadow.use(name, options)
     end
 end
 
-local getparameterset    = metapost.getparameterset
-local getparameterpreset = metapost.getparameterpreset
+local keys = {
+    "umbra", "penumbra", "usigma", "psigma", "udistance", "pdistance",
+    "direction", "offset", "resolution", "shadowcolor", "backgroundcolor", "fillcolor", "force", "directory",
+}
 
--- Keys whose value comes from the preset when the user did not pass an
--- explicit value in `externalshadow [...]`. They are looked up in the named
--- preset (e.g. "externalshadow:soft:medium"), which itself inherits from
--- "externalshadow", so unspecified preset keys still fall through.
-local preset_keys = { "umbra", "penumbra", "usigma", "psigma" }
-
-local function resolve_preset(options)
-    local name = options.preset
-    if not name or name == "" then return end
-    local preset = getparameterpreset("externalshadow:" .. name)
-    if not preset then
-        report("unknown preset %q", name)
-        return
+local function resolve_options(options)
+    local name      = rawget(options, "preset") or ""
+    local namespace = getmacro("????externalshadow")
+    if name ~= "" then
+        local instance = namespace .. name .. ":"
+        for _, k in ipairs(keys) do
+            if rawget(options, k) == nil then
+                local v = getmacro(instance .. k)
+                if v ~= nil then options[k] = v end
+            end
+        end
     end
-    for i = 1, #preset_keys do
-        local k = preset_keys[i]
+    local base = namespace .. ":"
+    for _, k in ipairs(keys) do
         if rawget(options, k) == nil then
-            options[k] = preset[k]
+            options[k] = getmacro(base .. k)
         end
     end
 end
@@ -338,15 +342,7 @@ end
 
 function mp.externalshadow_use(xmin, ymin, xmax, ymax)
     local options = getparameterset("externalshadow")
-    resolve_preset(options)
-    local keys = {
-        "umbra", "penumbra", "usigma", "psigma", "udistance", "pdistance",
-        "direction", "offset", "resolution", "shadowcolor", "backgroundcolor",
-        "force", "directory", "preset",
-    }
-    for _, k in ipairs(keys) do
-        report("options.%s = %s", k, tostring(options[k]))
-    end
+    resolve_options(options)
     local spec    = options_to_spec(options)
     local path    = options.path
 
@@ -383,6 +379,12 @@ function mp.externalshadow_use(xmin, ymin, xmax, ymax)
     )
 end
 
+function mp.externalshadow_fillcolor()
+    local options = getparameterset("externalshadow")
+    resolve_options(options)
+    return format("%q", options.fillcolor or "")
+end
+
 interfaces.implement {
     name      = "useexternalshadow",
     actions   = function(options)
@@ -403,6 +405,7 @@ interfaces.implement {
         { "offset" },
         { "resolution" },
         { "shadowcolor" },
+        { "fillcolor" },
         { "backgroundcorner"},
         { "backgroundradius" },
         { "backgroundcolor" },
