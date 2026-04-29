@@ -72,12 +72,16 @@ local function placement_sp(direction, offset)
     return round(cosd(d) * o), round(-sind(d) * o)
 end
 
-local function rectangle(w, h, rpx, corner)
+local function rectangle(w, h, rpx, corner, dx, dy)
     local x, y = max(1, w), max(1, h)
+    local ox = dx or 0
+    local oy = dy or 0
+    local x1, y1 = 1 + ox, 1 + oy
+    local x2, y2 = x + ox, y + oy
     if corner == v_round and rpx > 0 then
-        return format("roundrectangle 1,1 %d,%d %d,%d", x, y, rpx, rpx)
+        return format("roundrectangle %d,%d %d,%d %d,%d", x1, y1, x2, y2, rpx, rpx)
     end
-    return format("rectangle 1,1 %d,%d", x, y)
+    return format("rectangle %d,%d %d,%d", x1, y1, x2, y2)
 end
 
 -- Build the two ImageMagick masks for the box shadow.
@@ -87,9 +91,11 @@ local function box_masks(spec)
     local rpx    = spec.backgroundradius
     local corner = spec.backgroundcorner
 
-    local pad = max(ud + 2 * spec.usigma, pd + 2 * spec.psigma) + 1
-    local width  = w + 2 * pad
-    local height = h + 2 * pad
+    local pad = max(ud, pd) + 1
+    local spread_pad = max(ud + 2 * spec.usigma, pd + 2 * spec.psigma) + 1
+    local shift = spread_pad - pad
+    local width  = w + 2 * spread_pad
+    local height = h + 2 * spread_pad
 
     local r_pen = min(rpx, floor(min(w + 2*pd, h + 2*pd) / 2))
     local r_umb = min(rpx, floor(min(w + 2*ud, h + 2*ud) / 2))
@@ -97,8 +103,9 @@ local function box_masks(spec)
     return {
         width         = width,
         height        = height,
-        umbra_draw    = rectangle(w + 2*ud, h + 2*ud, r_umb, corner),
-        penumbra_draw = rectangle(w + 2*pd, h + 2*pd, r_pen, corner),
+        -- Align masks as for `pad`; canvas grows to `spread_pad` for blur margin.
+        umbra_draw    = rectangle(w + 2*ud, h + 2*ud, r_umb, corner, shift, shift),
+        penumbra_draw = rectangle(w + 2*pd, h + 2*pd, r_pen, corner, shift, shift),
     }
 end
 
