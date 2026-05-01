@@ -1,6 +1,6 @@
 %D \module
 %D   [     file=t-shadow,
-%D      version=2026.04.23,
+%D      version=2026.05.01,
 %D        title=\CONTEXT\ User Module,
 %D     subtitle=Shadow,
 %D       author=Aditya Mahajan,
@@ -9,7 +9,7 @@
 %D        email=adityam <at> ieee <dot> org,
 %D      license=GNU General Public License]
 
-\writestatus{loading}{Shadow (ver: 2026.04.23)}
+\writestatus{loading}{Shadow (ver: 2026.05.01)}
 
 \startmodule[shadow]
 

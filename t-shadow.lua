@@ -1,6 +1,6 @@
 modules = modules or { }
 modules["t-shadow"] = {
-    version = "2026.04.23",
+    version = "2026.05.01",
     comment = "Shadow Module",
     author = "Aditya Mahajan",
     copyright = "Aditya Mahajan",
