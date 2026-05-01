@@ -16,6 +16,7 @@ local floor, round, min, max = math.floor, math.round, math.min, math.max
 local cosd, sind             = math.cosd, math.sind
 local isfile, isdir, mkdirs  = lfs.isfile, lfs.isdir, lfs.mkdirs
 local collapsepath           = file.collapsepath
+local insert                 = table.insert
 
 local getmacro        = tokens.getters.macro
 local variables       = interfaces.variables
@@ -35,7 +36,7 @@ end
 
 local function dimen_to_px(n, resolution)
     if n == nil or n == "" then return 0 end
-  --
+    
     -- Metapost dimensions are passed as numbers.
     if type(n) == "number" then n = format("%fbp", n) end
 
@@ -78,10 +79,8 @@ end
 
 local function rectangle(w, h, rpx, corner, dx, dy)
     local x, y = max(1, w), max(1, h)
-    local ox = dx or 0
-    local oy = dy or 0
-    local x1, y1 = 1 + ox, 1 + oy
-    local x2, y2 = x + ox, y + oy
+    local x1, y1 = 1 + dx, 1 + dy
+    local x2, y2 = x + dx, y + dy
     if corner == v_round and rpx > 0 then
         return format("roundrectangle %d,%d %d,%d %d,%d", x1, y1, x2, y2, rpx, rpx)
     end
@@ -95,9 +94,10 @@ local function box_masks(spec)
     local rpx    = spec.backgroundradius
     local corner = spec.backgroundcorner
 
-    local pad = max(ud, pd) + 1
     local spread_pad = max(ud + 2 * spec.usigma, pd + 2 * spec.psigma) + 1
-    local shift = spread_pad - pad
+    local pad        = max(ud, pd) + 1
+
+    local shift  = spread_pad - pad
     local width  = w + 2 * spread_pad
     local height = h + 2 * spread_pad
 
@@ -107,11 +107,14 @@ local function box_masks(spec)
     return {
         width         = width,
         height        = height,
-        -- Align masks as for `pad`; canvas grows to `spread_pad` for blur margin.
         umbra_draw    = rectangle(w + 2*ud, h + 2*ud, r_umb, corner, shift, shift),
         penumbra_draw = rectangle(w + 2*pd, h + 2*pd, r_pen, corner, shift, shift),
     }
 end
+
+-- Soften mask edges before final write (IM units).
+local IM_MASK_BORDER_PX <const> = 3
+local IM_MASK_BLUR <const>      = "0x2.0"
 
 -- Render the penumbra and umbra masks into one cached PNG.
 local function render_shadow_png(spec, masks, outfile)
@@ -123,20 +126,44 @@ local function render_shadow_png(spec, masks, outfile)
     local umask = format(mask_fmt, masks.width, masks.height, shell_quote(masks.umbra_draw))
 
     local shadow_fmt = "-background %s -shadow %dx%d+0+0 +repage"
-    local pshadow = format(shadow_fmt, shell_quote(shadowcolor), spec.penumbra, spec.psigma)
-    local ushadow = format(shadow_fmt, shell_quote(shadowcolor), spec.umbra,    spec.usigma)
+    local pshadow = format(shadow_fmt, shell_quote(shadowcolor), spec.palpha, spec.psigma)
+    local ushadow = format(shadow_fmt, shell_quote(shadowcolor), spec.ualpha, spec.usigma)
 
-    local cmd = table.concat({
-        "magick",
-        "\\(", pmask, "\\)", "\\( +clone", pshadow, "\\)",
-        "\\(", umask, "\\)", "\\( +clone", ushadow, "\\)",
-        "-delete 0,2",
-        format("-background %s -channel Alpha -gravity Center -compose Lighten -composite", shell_quote(shadowcolor)),
-        format("\\( +clone -bordercolor %s -compose Src -border 3 -channel Alpha -blur 0x2.0 \\) -delete 0", shell_quote(blankcolor)),
-        format("-units PixelsPerInch -density %d -quality 00 +set date:create +set date:modify", spec.resolution),
-        format("-colorspace %s", spec.colorspace),
-        shell_quote(outfile),
-    }, " ")
+    local parts = { "magick" }
+
+    if spec.use_penumbra then
+        insert(parts, "\\(")
+        insert(parts, pmask)
+        insert(parts, "\\)")
+        insert(parts, "\\( +clone")
+        insert(parts, pshadow)
+        insert(parts, "\\)")
+    end
+
+    if spec.use_umbra then
+        insert(parts, "\\(")
+        insert(parts, umask)
+        insert(parts, "\\)")
+        insert(parts, "\\( +clone")
+        insert(parts, ushadow)
+        insert(parts, "\\)")
+    end
+
+    if spec.use_penumbra and spec.use_umbra then
+        insert(parts, "-delete 0,2")
+        insert(parts, format("-background %s -channel Alpha -gravity Center -compose Lighten -composite", shell_quote(shadowcolor)))
+    elseif spec.use_penumbra or spec.use_umbra then
+        insert(parts, "-delete 0")
+    else
+        return false
+    end
+
+    insert(parts, format("\\( +clone -bordercolor %s -compose Src -border %d -channel Alpha -blur %s \\) -delete 0", shell_quote(blankcolor), IM_MASK_BORDER_PX, IM_MASK_BLUR))
+    insert(parts, format("-units PixelsPerInch -density %d -quality 00 +set date:create +set date:modify", spec.resolution))
+    insert(parts, format("-colorspace %s", spec.colorspace))
+    insert(parts, shell_quote(outfile))
+
+    local cmd = table.concat(parts, " ")
 
     report("%s", cmd)
     os.execute(cmd)
@@ -151,12 +178,14 @@ local function build_stamp(spec, masks)
     local stamp = table.concat({
         spec.width, spec.height, spec.backgroundradius,
         spec.udistance, spec.pdistance, spec.usigma, spec.psigma,
-        spec.umbra, spec.penumbra, spec.resolution,
+        spec.ualpha, spec.palpha, spec.resolution,
+        spec.use_umbra and "u1" or "u0",
+        spec.use_penumbra and "p1" or "p0",
         spec.shadowcolor,
         spec.direction, spec.offset,
         spec.backgroundcorner,
     }, "|")
-    
+
     if masks and masks.umbra_draw and masks.penumbra_draw then
         stamp = stamp .. "|" .. masks.umbra_draw .. "|" .. masks.penumbra_draw
     end
@@ -180,15 +209,60 @@ function externalshadow.render(spec)
     return render_to_file(spec, box_masks(spec))
 end
 
+local shadowlayer_keys = { "blur", "spread", "transparency" }
+
+local function clamp_transparency(n)
+    n = tonumber(n)
+    if not n then
+        return 0.5
+    end
+    return max(0, min(1, n))
+end
+
+local function opacity_from_transparency(n)
+    return round(100 * (1 - clamp_transparency(n)))
+end
+
+local function resolve_shadowlayer(name)
+    local namespace = getmacro("????shadowlayer") or ""
+    local base      = namespace .. ":"
+    local resolved  = {
+        blur         = getmacro(base .. "blur"),
+        spread       = getmacro(base .. "spread"),
+        transparency = getmacro(base .. "transparency"),
+    }
+    local layername = name or ""
+
+    if layername == "" then
+        return nil
+    end
+
+    local instance = namespace .. layername .. ":"
+    for _, k in ipairs(shadowlayer_keys) do
+        local v = getmacro(instance .. k)
+        if v ~= nil then
+            resolved[k] = v
+        end
+    end
+
+    return resolved
+end
+
 local function options_to_spec(options)
     local resolution = tonumber(options.resolution) or 150
 
-    -- umbra and penumbra are percentages between 0 and 100
-    local umbra    = max(0, min(100, tonumber(options.umbra) or 50))
-    local penumbra = max(0, min(100, tonumber(options.penumbra) or 40))
+    local umbra_layer    = resolve_shadowlayer(options.umbra)
+    local penumbra_layer = resolve_shadowlayer(options.penumbra)
 
-    local ud_px = dimen_to_px(options.udistance, resolution)
-    local pd_px = dimen_to_px(options.pdistance, resolution)
+    local use_umbra    = umbra_layer ~= nil
+    local use_penumbra = penumbra_layer ~= nil
+
+    local ualpha = use_umbra    and opacity_from_transparency(umbra_layer.transparency) or 0
+    local palpha = use_penumbra and opacity_from_transparency(penumbra_layer.transparency) or 0
+
+    local ud_px = use_umbra    and dimen_to_px(umbra_layer.spread, resolution) or 0
+    local pd_px = use_penumbra and dimen_to_px(penumbra_layer.spread, resolution) or 0
+
     if pd_px < ud_px then pd_px = ud_px end
 
     local shadowcolor, colorspace = color_to_im(options.shadowcolor or "black", 1)
@@ -198,12 +272,14 @@ local function options_to_spec(options)
         directory        = options.directory or "",
         width            = dimen_to_px(options.width, resolution),
         height           = dimen_to_px(options.height, resolution),
-        umbra            = umbra,
-        penumbra         = penumbra,
-        usigma           = max(0, dimen_to_px(options.usigma, resolution)),
-        psigma           = max(0, dimen_to_px(options.psigma, resolution)),
+        ualpha           = ualpha,
+        palpha           = palpha,
+        usigma           = use_umbra    and max(0, dimen_to_px(umbra_layer.blur, resolution)) or 0,
+        psigma           = use_penumbra and max(0, dimen_to_px(penumbra_layer.blur, resolution)) or 0,
         udistance        = ud_px,
         pdistance        = pd_px,
+        use_umbra        = use_umbra,
+        use_penumbra     = use_penumbra,
         direction        = options.direction,
         offset           = options.offset,
         resolution       = resolution,
@@ -255,22 +331,26 @@ function externalshadow.use(name, options)
 end
 
 local keys = {
-    "umbra", "penumbra", "usigma", "psigma", "udistance", "pdistance",
+    "umbra", "penumbra",
     "direction", "offset", "resolution", "shadowcolor", "backgroundcolor", "fillcolor", "force", "directory",
 }
 
 local function resolve_options(options)
-    local name      = rawget(options, "preset") or ""
-    local namespace = getmacro("????externalshadow")
-    if name ~= "" then
-        local instance = namespace .. name .. ":"
+    local namespace = getmacro("????externalshadow") or ""
+    local preset    = rawget(options, "preset") or ""
+
+    if preset ~= "" then
+        local instance = namespace .. preset .. ":"
         for _, k in ipairs(keys) do
             if rawget(options, k) == nil then
                 local v = getmacro(instance .. k)
-                if v ~= nil then options[k] = v end
+                if v ~= nil then
+                    options[k] = v
+                end
             end
         end
     end
+
     local base = namespace .. ":"
     for _, k in ipairs(keys) do
         if rawget(options, k) == nil then
@@ -289,10 +369,10 @@ local function path_to_svg(path, fx, fy)
     local out = { format("M %s,%s", num(fx(path[1][1])), num(fy(path[1][2]))) }
 
     local function append_curve(prev, curr)
-        out[#out+1] = format("C %s,%s %s,%s %s,%s",
-            num(fx(prev[5])), num(fy(prev[6])),  -- right control of prev
-            num(fx(curr[3])), num(fy(curr[4])),  -- left control of curr
-            num(fx(curr[1])), num(fy(curr[2])))  -- knot point of curr
+        insert(out, format("C %s,%s %s,%s %s,%s",
+            num(fx(prev[5])), num(fy(prev[6])), -- right control of prev
+            num(fx(curr[3])), num(fy(curr[4])), -- left control of curr
+            num(fx(curr[1])), num(fy(curr[2])))) -- knot point of curr
     end
 
     for i = 2, n do
@@ -300,7 +380,7 @@ local function path_to_svg(path, fx, fy)
     end
     if path.cycle and n >= 2 then
         append_curve(path[n], path[1])
-        out[#out+1] = "Z"
+        insert(out, "Z")
     end
     return table.concat(out, " ")
 end
@@ -392,21 +472,18 @@ interfaces.implement {
     end,
     arguments = {{
         { "name" },
+        { "preset" },
         { "directory" },
         { "width" },
         { "height" },
         { "umbra" },
         { "penumbra" },
-        { "usigma" },
-        { "psigma" },
-        { "udistance" },
-        { "pdistance" },
         { "direction" },
         { "offset" },
         { "resolution" },
         { "shadowcolor" },
         { "fillcolor" },
-        { "backgroundcorner"},
+        { "backgroundcorner" },
         { "backgroundradius" },
         { "backgroundcolor" },
         { "force" },

@@ -18,15 +18,24 @@
 \startinterface all
   \setinterfaceconstant{umbra}{umbra}
   \setinterfaceconstant{penumbra}{penumbra}
-  \setinterfaceconstant{usigma}{usigma}
-  \setinterfaceconstant{psigma}{psigma}
-  \setinterfaceconstant{udistance}{udistance}
-  \setinterfaceconstant{pdistance}{pdistance}
+  \setinterfaceconstant{blur}{blur}
+  \setinterfaceconstant{spread}{spread}
+  \setinterfaceconstant{transparency}{transparency}
+  \setinterfaceconstant{layer}{layer}
   \setinterfaceconstant{shadowcolor}{shadowcolor}
   \setinterfaceconstant{fillcolor}{fillcolor}
 \stopinterface
 
 \registerctxluafile{t-shadow}{}
+
+\definenamespace
+  [shadowlayer]
+  [
+   \c!type=module,
+   \c!name=shadowlayer,
+   \c!command=\v!yes,
+   setup=\v!yes,
+  ]
 
 \definenamespace
   [externalshadow]
@@ -49,12 +58,8 @@
   [\c!directory=,
    \c!width=\overlaywidth,
    \c!height=\overlayheight,
-   \c!umbra=80,
-   \c!penumbra=40,
-   \c!usigma=0.85mm,
-   \c!psigma=1.52mm,
-   \c!udistance=0mm,
-   \c!pdistance=0.51mm,
+   \c!umbra=soft,
+   \c!penumbra=medium,
    \c!direction=-45,
    \c!offset=1.69mm,
    \c!backgroundradius=\framedparameter\c!backgroundradius,
@@ -76,10 +81,6 @@
      height           {\externalshadowparameter\c!height}%
      umbra            {\externalshadowparameter\c!umbra}%
      penumbra         {\externalshadowparameter\c!penumbra}%
-     usigma           {\externalshadowparameter\c!usigma}%
-     psigma           {\externalshadowparameter\c!psigma}%
-     udistance        {\externalshadowparameter\c!udistance}%
-     pdistance        {\externalshadowparameter\c!pdistance}%
      direction        {\externalshadowparameter\c!direction}%
      offset           {\externalshadowparameter\c!offset}%
      resolution       {\externalshadowparameter\c!resolution}%
@@ -92,17 +93,32 @@
    \relax
    \egroup}
 
-\defineexternalshadow[soft:light]  [umbra=35,penumbra=30,usigma=0.68mm,psigma=1.35mm]
-\defineexternalshadow[soft:medium] [umbra=50,penumbra=40,usigma=0.85mm,psigma=1.52mm]
-\defineexternalshadow[soft:dark]   [umbra=65,penumbra=50,usigma=1.02mm,psigma=1.86mm]
+\setupshadowlayer
+  [
+   \c!blur=0.85mm,
+   \c!spread=0mm,
+   \c!transparency=0.50,
+  ]
 
-\defineexternalshadow[hard:light]  [umbra=35,penumbra=30,usigma=0.17mm,psigma=1.35mm]
-\defineexternalshadow[hard:medium] [umbra=50,penumbra=40,usigma=0.34mm,psigma=1.69mm]
-\defineexternalshadow[hard:dark]   [umbra=65,penumbra=50,usigma=0.51mm,psigma=1.86mm]
+\defineshadowlayer[soft]   [\c!blur=0.85mm,\c!spread=0mm,\c!transparency=0.50]
+\defineshadowlayer[hard]   [\c!blur=0.34mm,\c!spread=0mm,\c!transparency=0.50]
+\defineshadowlayer[flat]   [\c!blur=0mm,\c!spread=0mm,\c!transparency=0.50]
 
-\defineexternalshadow[flat:light]  [umbra=35,penumbra=30,usigma=0mm,psigma=1.19mm]
-\defineexternalshadow[flat:medium] [umbra=50,penumbra=35,usigma=0mm,psigma=1.35mm]
-\defineexternalshadow[flat:dark]   [umbra=65,penumbra=40,usigma=0mm,psigma=1.52mm]
+\defineshadowlayer[light]  [\c!blur=1.35mm,\c!spread=0.51mm,\c!transparency=0.70]
+\defineshadowlayer[medium] [\c!blur=1.52mm,\c!spread=0.51mm,\c!transparency=0.60]
+\defineshadowlayer[dark]   [\c!blur=1.86mm,\c!spread=0.51mm,\c!transparency=0.50]
+
+\defineexternalshadow[soft:light]  [\c!umbra=soft,\c!penumbra=light]
+\defineexternalshadow[soft:medium] [\c!umbra=soft,\c!penumbra=medium]
+\defineexternalshadow[soft:dark]   [\c!umbra=soft,\c!penumbra=dark]
+
+\defineexternalshadow[hard:light]  [\c!umbra=hard,\c!penumbra=light]
+\defineexternalshadow[hard:medium] [\c!umbra=hard,\c!penumbra=medium]
+\defineexternalshadow[hard:dark]   [\c!umbra=hard,\c!penumbra=dark]
+
+\defineexternalshadow[flat:light]  [\c!umbra=flat,\c!penumbra=light]
+\defineexternalshadow[flat:medium] [\c!umbra=flat,\c!penumbra=medium]
+\defineexternalshadow[flat:dark]   [\c!umbra=flat,\c!penumbra=dark]
 
 \startMPdefinitions
     def externalshadow =
