@@ -62,7 +62,7 @@
    \c!penumbra=medium,
    \c!direction=-45,
    \c!offset=1.69mm,
-   \c!backgroundradius=\framedparameter\c!backgroundradius,
+   \c!backgroundradius=\overlayradius,
    \c!resolution=150,
    \c!shadowcolor=shadowcolor,
    \c!fillcolor=,
