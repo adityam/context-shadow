@@ -72,9 +72,7 @@ local function color_to_im(name, alpha)
 end
 
 local function placement_sp(direction, offset)
-    local d = tonumber(direction) or 270
-    local o = tex.sp(todimen(offset) or 0)
-    return round(cosd(d) * o), round(-sind(d) * o)
+    return round(cosd(direction) * offset), round(-sind(direction) * offset)
 end
 
 local function rectangle(w, h, rpx, corner, dx, dy)
@@ -268,6 +266,13 @@ local function options_to_spec(options)
     local shadowcolor, colorspace = color_to_im(options.shadowcolor or "black", 1)
     local blankcolor = color_to_im(options.shadowcolor or "black", 0)
 
+    local offset = options.offset or 0
+    if type(offset) == "number" then
+        offset = format("%fbp", offset)
+    end
+
+    local direction = tonumber(options.direction) or 270
+
     return {
         directory        = options.directory or "",
         width            = dimen_to_px(options.width, resolution),
@@ -280,8 +285,8 @@ local function options_to_spec(options)
         pdistance        = pd_px,
         use_umbra        = use_umbra,
         use_penumbra     = use_penumbra,
-        direction        = options.direction,
-        offset           = options.offset,
+        direction        = direction,
+        offset           = tex.sp(todimen(offset)),
         resolution       = resolution,
         shadowcolor      = shadowcolor,
         blankcolor       = blankcolor,
@@ -295,7 +300,7 @@ end
 function externalshadow.use(name, options)
     options = options or { }
     local spec = options_to_spec(options)
-    local hoff, voff = placement_sp(options.direction, options.offset)
+    local hoff, voff = placement_sp(spec.direction, spec.offset)
 
     local layerspec = { format("layer:%s", name) }
 
@@ -437,7 +442,7 @@ function mp.externalshadow_use(xmin, ymin, xmax, ymax)
     end
 
     local sp_per_bp  = tex.sp("1bp")
-    local hoff, voff = placement_sp(options.direction, options.offset)
+    local hoff, voff = placement_sp(spec.direction, spec.offset)
 
     -- ImageMagick expands the PNG for the blur, so center the loaded figure
     -- in MetaPost and then restore the path's logical bounds.
