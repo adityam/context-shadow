@@ -61,7 +61,7 @@
    \c!umbra=soft,
    \c!penumbra=medium,
    \c!direction=-45,
-   \c!offset=1.69mm,
+   \c!offset=1.7mm,
    \c!backgroundradius=\overlayradius,
    \c!resolution=150,
    \c!shadowcolor=shadowcolor,
@@ -100,13 +100,13 @@
    \c!transparency=0.50,
   ]
 
-\defineshadowlayer[soft]   [\c!blur=0.85mm,\c!spread=0mm,\c!transparency=0.50]
-\defineshadowlayer[hard]   [\c!blur=0.34mm,\c!spread=0mm,\c!transparency=0.50]
-\defineshadowlayer[flat]   [\c!blur=0mm,\c!spread=0mm,\c!transparency=0.50]
+\defineshadowlayer[soft]   [\c!blur=0.85mm,\c!spread=0mm,\c!transparency=0.40]
+\defineshadowlayer[hard]   [\c!blur=0.35mm,\c!spread=0mm,\c!transparency=0.40]
+\defineshadowlayer[flat]   [\c!blur=0mm,   \c!spread=0mm,\c!transparency=0.40]
 
-\defineshadowlayer[light]  [\c!blur=1.35mm,\c!spread=0.51mm,\c!transparency=0.70]
-\defineshadowlayer[medium] [\c!blur=1.52mm,\c!spread=0.51mm,\c!transparency=0.60]
-\defineshadowlayer[dark]   [\c!blur=1.86mm,\c!spread=0.51mm,\c!transparency=0.50]
+\defineshadowlayer[light]  [\c!blur=1.35mm,\c!spread=0.5mm,\c!transparency=0.70]
+\defineshadowlayer[medium] [\c!blur=1.50mm,\c!spread=0.5mm,\c!transparency=0.60]
+\defineshadowlayer[dark]   [\c!blur=1.85mm,\c!spread=0.5mm,\c!transparency=0.50]
 
 \defineexternalshadow[soft:light]  [\c!umbra=soft,\c!penumbra=light]
 \defineexternalshadow[soft:medium] [\c!umbra=soft,\c!penumbra=medium]
